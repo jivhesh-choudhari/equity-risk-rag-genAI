@@ -1,0 +1,47 @@
+{
+  "HLSR-2022": {
+    "tone": "positive"
+  },
+  "HLSR-2023": {
+    "tone": "cautious"
+  },
+  "HLSR-2024": {
+    "tone": "cautious"
+  },
+  "ACMR-2022": {
+    "tone": "positive"
+  },
+  "ACMR-2023": {
+    "tone": "neutral"
+  },
+  "ACMR-2024": {
+    "tone": "cautious"
+  },
+  "ZYNT-2022": {
+    "tone": "neutral"
+  },
+  "ZYNT-2023": {
+    "tone": "positive"
+  },
+  "ZYNT-2024": {
+    "tone": "cautious"
+  },
+  "NEOV-2022": {
+    "tone": "positive"
+  },
+  "NEOV-2023": {
+    "tone": "neutral"
+  },
+  "NEOV-2024": {
+    "tone": "cautious"
+  },
+  "LUMO-2022": {
+    "tone": "cautious"
+  },
+  "LUMO-2023": {
+    "tone": "cautious"
+  },
+  "LUMO-2024": {
+    "tone": "cautious"
+  }
+}

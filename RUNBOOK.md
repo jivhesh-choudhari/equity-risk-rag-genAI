@@ -1,0 +1,1 @@
+Swap loader to LangChain PyPDFLoader preserving {page_content, metadata}.
