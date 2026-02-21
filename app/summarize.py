@@ -18,17 +18,17 @@ from .tools import (
 )
 
 
-def summarize_filing(filing_id: str) -> dict:
+def summarize_filing(filing_id: str, source: str = None) -> dict:
     """
     Rule-based summarisation pipeline.
 
     Returns a dict compatible with the legacy /summarize response schema:
         {filing_id, highlights, risks, tone, financials}
     """
-    dlog("summarize", "=== summarize_filing START ===", {"filing_id": filing_id})
+    dlog("summarize", "=== summarize_filing START ===", {"filing_id": filing_id, "source": source})
 
     # ── Load + chunk ──────────────────────────────────────────────────────────
-    loader = LoaderFactory.get()
+    loader = LoaderFactory.get(source)
     docs   = loader.load(filing_id)          # raises FileNotFoundError if missing
     dlog("summarize", "Loaded docs",
          {"count": len(docs),

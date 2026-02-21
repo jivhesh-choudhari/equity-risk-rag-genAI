@@ -1,25 +1,4 @@
-"""
-LangGraph agent node functions.
-
-Each function:
-  - Takes FilingState
-  - Returns a partial state dict (only the keys it owns)
-  - Uses LLM when OPENAI_API_KEY is set; falls back to rule-based tools otherwise
-  - Never raises — errors go into state['errors']
-
-Node execution order (see graph.py):
-  orchestrator
-       │
-  ┌────┼────┐  (parallel)
-  ▼    ▼    ▼
-  sentiment  risk  financial
-       │    │    │  (fan-in barrier)
-       └────┼────┘
-            ▼
-        summarizer
-            ▼
-         evaluator
-"""
+"""LangGraph agent node functions (orchestrator, sentiment, risk, financial, summarizer, evaluator)."""
 from __future__ import annotations
 
 import os
@@ -93,14 +72,11 @@ def _read_prompt(filename: str) -> str:
 # ── Node 1: Orchestrator ─────────────────────────────────────────────────────
 
 def orchestrator_node(state: FilingState) -> dict:
-    """
-    Load the filing, split into sections, initialise state.
-    No LLM call — pure I/O and routing.
-    """
+    """Load the filing, split into sections, initialise state."""
     filing_id = state["filing_id"]
     dlog("orchestrator", f"=== Node START ===", {"filing_id": filing_id})
     try:
-        loader    = LoaderFactory.get()
+        loader    = LoaderFactory.get(state.get("filing_source") or None)
         docs      = loader.load(filing_id)
         dlog("orchestrator", f"Loaded {len(docs)} source documents")
         chunks    = chunk_documents(docs,
@@ -108,7 +84,6 @@ def orchestrator_node(state: FilingState) -> dict:
                                     chunk_overlap=cfg.chunker.chunk_overlap)
         dlog("orchestrator", f"Chunked into {len(chunks)} chunks")
 
-        # Build sections dict  {section_label: [chunk_docs]}
         sections: Dict[str, List[dict]] = {}
         for ch in chunks:
             sec = ch.get("metadata", {}).get("section", "Unknown")
@@ -134,11 +109,7 @@ def orchestrator_node(state: FilingState) -> dict:
 # ── Node 2: Sentiment Agent ───────────────────────────────────────────────────
 
 def sentiment_node(state: FilingState) -> dict:
-    """
-    Classify overall filing tone as positive / neutral / cautious.
-    LLM path: structured JSON output with reasoning.
-    Fallback: rule-based keyword scorer from sentiment_risk.py.
-    """
+    """Classify filing tone as positive / neutral / cautious."""
     sections = state.get("sections", {})
     text     = _section_text(sections, ["Business", "Results", "Unknown"])
     dlog("sentiment_node", "=== Node START ===",
@@ -149,7 +120,7 @@ def sentiment_node(state: FilingState) -> dict:
 
     llm = _get_llm()
 
-    # ── LLM path ─────────────────────────────────────────────────────────────
+
     if llm:
         dlog("sentiment_node", "Using LLM path")
         prompt_template = _read_prompt("sentiment_prompt.txt")
@@ -173,7 +144,7 @@ def sentiment_node(state: FilingState) -> dict:
             "sources":        [{"section": "Business+Results", "agent": "sentiment"}],
         }
 
-    # ── Rule-based fallback ───────────────────────────────────────────────────
+    # rule-based fallback
     dlog("sentiment_node", "Using rule-based fallback (no LLM)")
     p = n = u = 0
     for docs in sections.values():
@@ -194,11 +165,7 @@ def sentiment_node(state: FilingState) -> dict:
 # ── Node 3: Risk Agent ────────────────────────────────────────────────────────
 
 def risk_node(state: FilingState) -> dict:
-    """
-    Extract top-3 risk factors from the Risk Factors section.
-    LLM path: structured extraction with severity and citations.
-    Fallback: keyword-density ranking from tools.py.
-    """
+    """Extract top-3 risk factors from the Risk Factors section."""
     sections  = state.get("sections", {})
     risk_docs = (
         sections.get("Risk Factors", []) or
@@ -215,7 +182,7 @@ def risk_node(state: FilingState) -> dict:
 
     llm = _get_llm()
 
-    # ── LLM path ─────────────────────────────────────────────────────────────
+
     if llm:
         dlog("risk_node", "Using LLM path")
         text            = _section_text(sections, ["Risk Factors", "Risks", "Unknown"])
@@ -237,7 +204,7 @@ def risk_node(state: FilingState) -> dict:
             "sources": [{"section": "Risk Factors", "agent": "risk"}],
         }
 
-    # ── Rule-based fallback ───────────────────────────────────────────────────
+    # rule-based fallback
     dlog("risk_node", "Using rule-based fallback (no LLM)")
     risks = extract_risk_factors_tool.invoke({"documents": risk_docs, "top_k": 3})
     dlog("risk_node", "Rule-based result",
@@ -253,11 +220,7 @@ def risk_node(state: FilingState) -> dict:
 # ── Node 4: Financial Agent ───────────────────────────────────────────────────
 
 def financial_node(state: FilingState) -> dict:
-    """
-    Extract key financial metrics from table chunks (income statements, etc.).
-    LLM path: structured reading of Markdown pipe tables.
-    Fallback: regex-based metric extraction from tools.py.
-    """
+    """Extract key financial metrics from table chunks."""
     sections       = state.get("sections", {})
     all_docs       = [d for docs in sections.values() for d in docs]
     table_docs     = [d for d in all_docs if d.get("metadata", {}).get("chunk_type") == "table"
@@ -268,7 +231,7 @@ def financial_node(state: FilingState) -> dict:
 
     llm = _get_llm()
 
-    # ── LLM path ─────────────────────────────────────────────────────────────
+
     if llm and table_docs:
         dlog("financial_node", "Using LLM path")
         tables_text = "\n\n".join(d["page_content"] for d in table_docs)[:cfg.llm.max_table_chars]
@@ -292,7 +255,7 @@ def financial_node(state: FilingState) -> dict:
             "sources":    [{"section": "Financial Statements", "agent": "financial"}],
         }
 
-    # ── Rule-based fallback ───────────────────────────────────────────────────
+    # rule-based fallback
     dlog("financial_node", "Using rule-based fallback (no LLM or no table docs)")
     financials = extract_financial_tables_tool.invoke({"documents": target_docs})
     dlog("financial_node", "Rule-based result",
@@ -307,12 +270,7 @@ def financial_node(state: FilingState) -> dict:
 # ── Node 5: Summarizer Agent ──────────────────────────────────────────────────
 
 def summarizer_node(state: FilingState) -> dict:
-    """
-    Produce 2 highlight bullets grounded in Business/Results sections.
-    Has access to tone, risks, and financials from prior parallel agents.
-    LLM path: synthesis with full context.
-    Fallback: first-sentence extraction (legacy behaviour).
-    """
+    """Produce 2 highlight bullets grounded in Business/Results sections."""
     sections   = state.get("sections", {})
     tone       = state.get("tone", "neutral")
     risks      = state.get("risks", [])
@@ -329,7 +287,7 @@ def summarizer_node(state: FilingState) -> dict:
 
     llm = _get_llm()
 
-    # ── LLM path ─────────────────────────────────────────────────────────────
+
     if llm:
         dlog("summarizer_node", "Using LLM path")
         risk_summary  = "; ".join(r.get("snippet", "") for r in risks[:2])
@@ -355,7 +313,7 @@ def summarizer_node(state: FilingState) -> dict:
             "sources":    [{"section": "Business+Results", "agent": "summarizer"}],
         }
 
-    # ── Rule-based fallback (legacy first-sentence extraction) ────────────────
+    # rule-based fallback — first sentence per section
     dlog("summarizer_node", "Using rule-based fallback (no LLM)")
     highlights = []
     for sec_name in ("Business", "Results"):
@@ -376,10 +334,7 @@ def summarizer_node(state: FilingState) -> dict:
 # ── Node 6: Evaluator Agent ───────────────────────────────────────────────────
 
 def evaluator_node(state: FilingState) -> dict:
-    """
-    Validate output schema and groundedness. Sets eval_result and increments
-    retry_count on failure (graph.py routes back to summarizer if retry < 2).
-    """
+    """Validate output schema and groundedness; sets eval_result and increments retry_count on failure."""
     highlights = state.get("highlights", [])
     risks      = state.get("risks", [])
     tone       = state.get("tone", "")

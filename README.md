@@ -1,6 +1,22 @@
 # Equity Filings Summarizer
 
-An agentic pipeline that summarises equity filings (10-K / 10-Q style documents) using LangGraph, LangChain tools, and OpenAI — with a full rule-based fallback that works without any API key.
+Agentic pipeline for summarising equity filings (10-K / 10-Q). Uses LangGraph + OpenAI with a full rule-based fallback that works without any API key. Supports both the synthetic Markdown corpus and real PDF filings.
+
+## Quick Start
+
+```bash
+pip install -r requirements.txt
+uvicorn app.server:app --port 9060 --reload
+
+# rule-based (no key needed)
+curl -X POST http://localhost:9060/summarize -H "Content-Type: application/json" -d '{"filing_id":"ACMR-2022"}'
+
+# LLM agentic (requires OPENAI_API_KEY in .env)
+curl -X POST http://localhost:9060/analyze -H "Content-Type: application/json" -d '{"filing_id":"HLSR-2024"}'
+
+# real PDF filing
+curl -X POST http://localhost:9060/analyze -H "Content-Type: application/json" -d '{"filing_id":"my-10Q","source":"pdf"}'
+```
 
 ---
 
@@ -33,26 +49,25 @@ An agentic pipeline that summarises equity filings (10-K / 10-Q style documents)
 │   ├── loader.py          # MarkdownFilingLoader, PDFFilingLoader, LoaderFactory
 │   ├── schema.py          # FilingState TypedDict + Pydantic output models
 │   ├── sentiment_risk.py  # Keyword-based sentiment / risk scorer (rule-based)
-│   ├── server.py          # FastAPI app — /summarize (rule-based) + /analyze (agentic)
-│   ├── summarize.py       # Legacy rule-based orchestrator (backs /summarize)
-│   └── tools.py           # 7 LangChain @tool functions (shared by agents + legacy)
+│   ├── server.py          # FastAPI app — /summarize + /analyze
+│   ├── summarize.py       # Rule-based orchestrator (backs /summarize)
+│   └── tools.py           # LangChain @tool functions
 ├── corpus/
-│   └── filings/           # 15 synthetic .md filings (5 tickers × 2022–2024)
+│   ├── filings/           # 15 synthetic .md filings (5 tickers × 2022–2024)
+│   └── pdfs/              # Drop real 10-K / 10-Q PDFs here
 ├── evaluation/
 │   ├── eval_coherence_proxy.py
 │   ├── eval_groundedness.py
 │   ├── eval_sentiment_agreement.py
-│   └── gold_labels.json   # Human-labelled tones for all 15 filings
-├── mcp_server/
-│   └── filing_loader_server.py  # FastMCP stdio server
+│   └── gold_labels.json
 ├── notebooks/
-│   └── pipeline_testing.ipynb   # Interactive walkthrough of every stage
+│   └── agent.ipynb
 ├── prompts/
 │   ├── risk_prompt.txt
 │   ├── sentiment_prompt.txt
 │   └── summary_prompt.txt
-├── config.yml             # All runtime settings
-├── .env                   # OPENAI_API_KEY (never committed)
+├── config.yml
+├── .env                   # OPENAI_API_KEY (not committed)
 └── requirements.txt
 ```
 
@@ -217,10 +232,21 @@ curl -s -X POST http://localhost:9060/summarize \
 
 Uses LangGraph. Falls back to rule-based nodes if no API key is set.
 
+**Request body:**
+
+| Field        | Type   | Default      | Description                              |
+|--------------|--------|--------------|------------------------------------------|
+| `filing_id`  | string | required     | Filing ID (no extension)                 |
+| `source`     | string | `"markdown"` | `"markdown"` for corpus, `"pdf"` for PDFs |
+
 ```bash
-# PowerShell
+# markdown filing (synthetic corpus)
 Invoke-RestMethod -Method Post -Uri http://localhost:9060/analyze `
   -ContentType "application/json" -Body '{"filing_id":"HLSR-2024"}'
+
+# real PDF (place file in corpus/pdfs/my-10Q.pdf first)
+Invoke-RestMethod -Method Post -Uri http://localhost:9060/analyze `
+  -ContentType "application/json" -Body '{"filing_id":"my-10Q","source":"pdf"}'
 
 # curl
 curl -s -X POST http://localhost:9060/analyze \
@@ -228,15 +254,24 @@ curl -s -X POST http://localhost:9060/analyze \
   -d '{"filing_id":"HLSR-2024"}' | python -m json.tool
 ```
 
-**Additional fields in response:**
+**Response:**
 
 ```json
 {
-  "sources": [{"section": "Risk Factors", "agent": "risk_rule_based"}],
+  "filing_id": "HLSR-2024",
+  "highlights": [
+    "HLSR achieved 12% revenue growth driven by cloud migrations. (Results)",
+    "Gross margin of 77% reflects strong cost management. (Business)"
+  ],
+  "risks": [
+    {"snippet": "Cybersecurity incidents could result in penalties.", "severity": "high", "section": "Risk Factors"}
+  ],
+  "tone": "positive",
+  "financials": {"revenue": null, "net_income": null, "gross_margin": null, "yoy_change": null, "raw_tables": []},
+  "sources": [{"section": "Risk Factors", "agent": "risk"}],
   "eval_result": {
     "valid": true,
-    "validation": {"valid": true, "errors": []},
-    "groundedness": {"score": 0.923, "grounded": true, "hit_tokens": 12, "total_tokens": 13}
+    "groundedness": {"score": 0.702, "grounded": true}
   },
   "errors": []
 }
@@ -258,25 +293,18 @@ ZYNT-2022  ZYNT-2023  ZYNT-2024
 
 ## Running the Pipeline Directly
 
-Without the server, run either pipeline from Python:
-
 ```bash
-# Rule-based (legacy)
-python -c "
-from app.summarize import summarize_filing
-import json
-print(json.dumps(summarize_filing('ACMR-2022'), indent=2))
-"
+# rule-based
+python -c "from app.summarize import summarize_filing; import json; print(json.dumps(summarize_filing('ACMR-2022'), indent=2))"
 
-# Agentic (LangGraph)
-python -c "
-from app.graph import run_pipeline
-import json
-print(json.dumps(run_pipeline('HLSR-2024'), indent=2))
-"
+# agentic (markdown)
+python -c "from app.graph import run_pipeline; import json; print(json.dumps(run_pipeline('HLSR-2024'), indent=2))"
+
+# agentic (PDF)
+python -c "from app.graph import run_pipeline; import json; print(json.dumps(run_pipeline('my-10Q', source='pdf'), indent=2))"
 ```
 
-Or open [notebooks/pipeline_testing.ipynb](notebooks/pipeline_testing.ipynb) for an interactive walkthrough of every stage (loader → chunker → tools → agent nodes → full graph).
+Or open [notebooks/agent.ipynb](notebooks/agent.ipynb) for an interactive walkthrough.
 
 ---
 
@@ -368,13 +396,14 @@ Available tools:
 
 ## Corpus
 
-The `corpus/filings/` directory contains 15 synthetic Markdown filings structured as SEC-style 10-K sections:
+`corpus/filings/` — 15 synthetic Markdown filings (SEC 10-K style) across 5 tickers and 3 years:
 
-- **Business** — company description and revenue model
-- **Results** — revenue growth, margins, key drivers
-- **Risk Factors** — regulatory, cybersecurity, and market risks
-- **Liquidity** — cash position and burn rate
-- **Outlook** — forward-looking guidance
+```
+ACMR  HLSR  LUMO  NEOV  ZYNT   ×   2022  2023  2024
+```
 
-To use real PDF filings (actual 10-K / 10-Q documents), place them in `corpus/pdfs/<TICKER-YEAR>.pdf` and set `loader.source: pdf` in [config.yml](config.yml).
+Each filing has sections: Business, Results, Risk Factors, Liquidity, Outlook.
+
+`corpus/pdfs/` — drop real PDF filings here. Filename = filing ID, e.g. `goldman-2024.pdf`.
+Then call `/analyze` with `"source": "pdf"` and `"filing_id": "goldman-2024"`.
 

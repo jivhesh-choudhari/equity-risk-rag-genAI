@@ -13,8 +13,7 @@ except ImportError:
     except ImportError:
         _LANGCHAIN_AVAILABLE = False
 
-# Separator priority tuned for SEC filing structure:
-#   section breaks > paragraphs > sentences > clauses > words
+# Separator priority for SEC filing text
 _FINANCIAL_SEPARATORS = [
     '\n\n\n',   # major section breaks
     '\n\n',     # paragraph breaks
@@ -33,19 +32,9 @@ def chunk_documents(
     chunk_overlap: int = 150,
 ) -> List[dict]:
     """
-    Splits documents into semantically coherent overlapping chunks.
-
-    Strategy:
-    - Uses RecursiveCharacterTextSplitter with SEC-filing-aware separators.
-    - Table blocks (marked [TABLES]...) are NEVER split mid-row; each table
-      block becomes its own chunk with chunk_type='table'.
-    - Prose sections are chunked normally with chunk_type='text'.
-    - Falls back to original fixed-size slicing if LangChain is not installed.
-
-    Args:
-        docs:          List of Documents from the loader.
-        chunk_size:    Target max characters per chunk (default 1000).
-        chunk_overlap: Overlap between adjacent text chunks (default 150).
+    Split documents into overlapping chunks.
+    Table blocks (marked [TABLES]) are kept intact as their own chunks.
+    Falls back to simple fixed-size slicing if LangChain is not installed.
     """
     dlog("chunker", f"chunk_documents called",
          {"input_docs": len(docs), "chunk_size": chunk_size,

@@ -1,5 +1,5 @@
 """
-Pydantic output models and LangGraph shared state for the agentic pipeline.
+Pydantic output models and LangGraph shared state.
 """
 from __future__ import annotations
 
@@ -34,13 +34,10 @@ class FilingSummary(BaseModel):
     sources:    List[dict]          # [{section, page, chunk_index}]
 
 
-# ── LangGraph shared state ────────────────────────────────────────────────────
-# Annotated[List[X], operator.add] → list fields that multiple nodes append to.
-# Plain fields are last-write-wins (only one node ever writes them).
-
 class FilingState(TypedDict):
     # ── Set by Orchestrator ──────────────────────────────────────────────────
     filing_id:      str
+    filing_source:  str                                 # "markdown" | "pdf" | ""
     source_docs:    List[dict]                          # raw loader output
     sections:       Dict[str, List[dict]]               # {section_label: [docs]}
 

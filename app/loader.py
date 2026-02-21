@@ -48,7 +48,7 @@ def _parse_markdown_file(path: str) -> List[dict]:
 
 # ── PDF Loader (real 10-K / 10-Q filings) ─────────────────────────────────────
 
-# Section header patterns common in SEC 10-K / 10-Q filings
+# Section header patterns for SEC 10-K / 10-Q filings
 _SECTION_PATTERNS = [
     (r'item\s+1a[\.\ s]', 'Risk Factors'),
     (r'item\s+1[\.\ s]',  'Business'),
@@ -62,7 +62,7 @@ _SECTION_PATTERNS = [
 
 
 def _detect_section(text: str) -> str:
-    """Heuristically map the first 400 chars of a page to an SEC section label."""
+    """Map the first 400 chars of a page to an SEC section label."""
     lower = text.lower()[:400]
     for pattern, label in _SECTION_PATTERNS:
         if re.search(pattern, lower):
@@ -82,15 +82,7 @@ def _table_to_markdown(table: list) -> str:
 
 
 class PDFFilingLoader:
-    """
-    Extracts text + tables from financial PDFs using pdfplumber.
-
-    Why pdfplumber over PyPDFLoader:
-    - Preserves table cell boundaries (critical for income statements, balance sheets)
-    - Tables are serialised to Markdown pipe format so LLMs see structured data
-    - Handles multi-column layouts better than basic PDF text extraction
-    - Returns one Document per page with metadata: {title, section, page, source, has_tables}
-    """
+    """Extracts text and tables from financial PDFs using pdfplumber."""
 
     def __init__(self, pdf_dir: str):
         self.pdf_dir = pdf_dir
@@ -160,12 +152,7 @@ class PDFFilingLoader:
 # ── Factory ────────────────────────────────────────────────────────────────────
 
 class LoaderFactory:
-    """
-    Returns the appropriate loader based on the FILING_SOURCE env var.
-
-    FILING_SOURCE=markdown  →  MarkdownFilingLoader  (default, synthetic corpus)
-    FILING_SOURCE=pdf       →  PDFFilingLoader        (real 10-K / 10-Q PDFs)
-    """
+    """Returns MarkdownFilingLoader or PDFFilingLoader based on source parameter."""
 
     @staticmethod
     def get(source: str = None):
@@ -183,8 +170,8 @@ class LoaderFactory:
         return MarkdownFilingLoader(md_dir)
 
 
-# ── Backward-compat shim (used by summarize.py) ────────────────────────────────
+# ── Backward-compat shim ──────────────────────────────────────────────────────
 
 def load_markdown_as_documents(path: str) -> List[dict]:
-    """Legacy helper — kept for backward compatibility with summarize.py."""
+    """Legacy helper kept for compatibility with summarize.py."""
     return _parse_markdown_file(path)

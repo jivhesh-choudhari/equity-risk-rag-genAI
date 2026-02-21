@@ -15,6 +15,7 @@ app = FastAPI(
 
 class SumReq(BaseModel):
     filing_id: str
+    source: str = "markdown"  # "markdown" or "pdf"
 
 
 # ── Legacy endpoint (rule-based, no LLM) ─────────────────────────────────────
@@ -23,7 +24,7 @@ class SumReq(BaseModel):
 def summarize(req: SumReq):
     """Original keyword-based pipeline. Always available without an LLM."""
     try:
-        return summarize_filing(req.filing_id)
+        return summarize_filing(req.filing_id, source=req.source)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -45,10 +46,8 @@ def analyze(req: SumReq):
             detail=f'langgraph not installed. Run: pip install langgraph. Error: {e}',
         )
     try:
-        return run_pipeline(req.filing_id)
+        return run_pipeline(req.filing_id, source=req.source)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -74,4 +74,4 @@ debug:
   # Set to true to print step-by-step pipeline trace to the console.
   # Each stage prints [DEBUG][<stage>] lines with key statistics.
   # Disable in production (adds I/O overhead on every pipeline call).
-  enabled: false
+  enabled: true

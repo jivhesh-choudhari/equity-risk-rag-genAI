@@ -1,1 +1,130 @@
-{"note": "save your API output here"}
+{
+  "_note": "Real API outputs captured from live server run against corpus/filings and corpus/pdfs",
+  "_model": "gpt-4o-mini",
+  "_captured": "2025-Q2",
+
+  "summarize_markdown": {
+    "endpoint": "POST /summarize",
+    "request": {"filing_id": "ACMR-2022"},
+    "response": {
+      "filing_id": "ACMR-2022",
+      "highlights": [
+        "ACMR provides enterprise software and services with subscriptions and support revenue streams. (Business)",
+        "Revenue grew 15% with gross margin 58% driven by cloud migrations and AI analytics. (Results)"
+      ],
+      "risks": [
+        "- Cybersecurity incidents could result in penalties. (Risk Factors)"
+      ],
+      "tone": "neutral",
+      "financials": {
+        "revenue": null,
+        "net_income": null,
+        "gross_margin": null,
+        "yoy_change": null
+      }
+    }
+  },
+
+  "analyze_markdown": {
+    "endpoint": "POST /analyze",
+    "request": {"filing_id": "HLSR-2024"},
+    "response": {
+      "filing_id": "HLSR-2024",
+      "highlights": [
+        "HLSR achieved a 12% revenue growth, supported by strong demand for cloud migrations and AI analytics. (Results)",
+        "The company maintains a robust gross margin of 77%, indicating effective cost management and value delivery in its software and services. (Business)"
+      ],
+      "risks": [
+        {
+          "snippet": "Cybersecurity incidents could result in penalties.",
+          "severity": "high",
+          "section": "Risk Factors"
+        },
+        {
+          "snippet": "Regulatory changes (GDPR/CCPA) may increase costs.",
+          "severity": "medium",
+          "section": "Risk Factors"
+        },
+        {
+          "snippet": "Vendor dependency may delay fulfillment.",
+          "severity": "medium",
+          "section": "Risk Factors"
+        }
+      ],
+      "tone": "positive",
+      "financials": {
+        "revenue": null,
+        "net_income": null,
+        "gross_margin": null,
+        "yoy_change": null,
+        "raw_tables": []
+      },
+      "sources": [
+        {"section": "Financial Statements", "agent": "financial_rule_based"},
+        {"section": "Risk Factors",          "agent": "risk"},
+        {"section": "Business+Results",      "agent": "sentiment"},
+        {"section": "Business+Results",      "agent": "summarizer"}
+      ],
+      "eval_result": {
+        "valid": true,
+        "validation":    {"valid": true, "errors": []},
+        "groundedness":  {"score": 0.702, "grounded": true, "hit_tokens": 40, "total_tokens": 57}
+      },
+      "errors": []
+    }
+  },
+
+  "analyze_pdf": {
+    "endpoint": "POST /analyze",
+    "request": {"filing_id": "test-10Q-document", "source": "pdf"},
+    "description": "Goldman Sachs 10-Q (Q1 2025) loaded via PyMuPDF from corpus/pdfs/",
+    "response": {
+      "filing_id": "test-10Q-document",
+      "highlights": [
+        "Goldman Sachs reported a significant increase in net earnings to $4,738 million for the quarter ended March 31, 2025, compared to $4,132 million in the same period last year, indicating strong operational performance. (Results)",
+        "The company achieved a notable rise in earnings per common share, reaching $14.25, up from $11.67 in the prior year, reflecting effective cost management and revenue generation strategies. (Results)"
+      ],
+      "risks": [
+        {
+          "snippet": "Reputational risk is the potential risk that negative publicity regarding our business practices, whether true or not, will cause a decline in our customer base, costly litigation or revenue reductions.",
+          "severity": "high",
+          "section": "Reputational Risk Management"
+        },
+        {
+          "snippet": "Compliance risk is the risk of legal or regulatory sanctions, material financial loss or damage to our reputation arising from our failure to comply with the requirements of applicable laws, rules and regulations, and our internal policies and procedures.",
+          "severity": "high",
+          "section": "Compliance Risk Management"
+        },
+        {
+          "snippet": "Conflicts of interest and our approach to dealing with them are fundamental to our client relationships, our reputation and our long-term success.",
+          "severity": "medium",
+          "section": "Conflicts Management"
+        }
+      ],
+      "tone": "positive",
+      "financials": {
+        "revenue": null,
+        "net_income": null,
+        "gross_margin": null,
+        "yoy_change": null,
+        "raw_tables": [
+          "[TABLES]\n| 2.2 to 3.0 | 3.0 |\n| --- | --- |",
+          "[TABLES]\n|  | transfers |\n| --- | --- |\n| of certain hybrid financial instruments in unsecured short- |  |\n| and long-term borrowings to level 2 (principally due to |  |\n| increased price transparency of certain volatility inputs used |  |\n| to value these instruments) |  |",
+          "[TABLES]\n|  |  |\n| --- | --- |\n| As of December 2024 |  |"
+        ]
+      },
+      "sources": [
+        {"section": "Financial Statements", "agent": "financial"},
+        {"section": "Risk Factors",          "agent": "risk"},
+        {"section": "Business+Results",      "agent": "sentiment"},
+        {"section": "Business+Results",      "agent": "summarizer"}
+      ],
+      "eval_result": {
+        "valid": true,
+        "validation":   {"valid": true, "errors": []},
+        "groundedness": {"score": 0.975, "grounded": true, "hit_tokens": 155, "total_tokens": 159}
+      },
+      "errors": []
+    }
+  }
+}
