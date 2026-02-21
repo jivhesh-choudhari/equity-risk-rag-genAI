@@ -82,6 +82,12 @@ class MCPConfig:
 
 
 @dataclass
+class DebugConfig:
+    """Controls console debug output across the entire pipeline."""
+    enabled: bool = False
+
+
+@dataclass
 class SecretsConfig:
     """Secrets are read from environment / .env — never from config.yml."""
     openai_api_key: Optional[str] = field(
@@ -104,6 +110,7 @@ class Config:
     evaluation: EvaluationConfig = field(default_factory=EvaluationConfig)
     server:     ServerConfig     = field(default_factory=ServerConfig)
     mcp:        MCPConfig        = field(default_factory=MCPConfig)
+    debug:      DebugConfig      = field(default_factory=DebugConfig)
     secrets:    SecretsConfig    = field(default_factory=SecretsConfig)
 
 

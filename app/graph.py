@@ -34,6 +34,7 @@ from .agents import (
     summarizer_node,
 )
 from .config import cfg
+from .debug import dlog
 from .schema import FilingState
 
 
@@ -48,8 +49,14 @@ def _route_evaluator(state: FilingState) -> str:
     result      = state.get("eval_result", {})
     retry_count = state.get("retry_count", 0)
     if result.get("valid", False) or retry_count >= cfg.graph.max_retries:
-        return "end"
-    return "retry"
+        decision = "end"
+    else:
+        decision = "retry"
+    dlog("graph", f"_route_evaluator decision: {decision}",
+         {"eval_valid": result.get("valid", False),
+          "retry_count": retry_count,
+          "max_retries": cfg.graph.max_retries})
+    return decision
 
 
 # ── Graph builder ─────────────────────────────────────────────────────────────
@@ -108,9 +115,11 @@ def run_pipeline(filing_id: str) -> dict:
     Returns a dict matching FilingSummary schema:
         {filing_id, highlights, risks, tone, financials, sources, eval_result}
     """
+    dlog("graph", "=== run_pipeline START ===", {"filing_id": filing_id})
     graph  = build_graph()
+    dlog("graph", "Graph compiled, invoking")
     result = graph.invoke({"filing_id": filing_id})
-    return {
+    output = {
         "filing_id":  filing_id,
         "highlights": result.get("highlights", []),
         "risks":      result.get("risks", []),
@@ -120,3 +129,11 @@ def run_pipeline(filing_id: str) -> dict:
         "eval_result": result.get("eval_result", {}),
         "errors":     result.get("errors", []),
     }
+    dlog("graph", "=== run_pipeline END ===",
+         {"filing_id": filing_id,
+          "tone": output["tone"],
+          "highlights_count": len(output["highlights"]),
+          "risks_count": len(output["risks"]),
+          "eval_passed": output["eval_result"].get("valid", False),
+          "errors": output["errors"]})
+    return output

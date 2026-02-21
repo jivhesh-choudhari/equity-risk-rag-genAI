@@ -1,6 +1,8 @@
 from typing import List
 import re, os
 
+from .debug import dlog
+
 
 # ── Markdown Loader (synthetic corpus) ────────────────────────────────────────
 
@@ -12,10 +14,16 @@ class MarkdownFilingLoader:
 
     def load(self, filing_id: str) -> List[dict]:
         path = os.path.join(self.corpus_dir, f"{filing_id}.md")
-        return _parse_markdown_file(path)
+        dlog("loader", f"MarkdownFilingLoader -> loading '{filing_id}'",
+             {"path": path})
+        docs = _parse_markdown_file(path)
+        dlog("loader", f"MarkdownFilingLoader -> done",
+             {"filing_id": filing_id, "doc_count": len(docs)})
+        return docs
 
 
 def _parse_markdown_file(path: str) -> List[dict]:
+    dlog("loader", f"Parsing markdown file: {os.path.basename(path)}")
     with open(path, 'r', encoding='utf-8') as f:
         text = f.read()
     parts = re.split(r'\n(?=## )', text)
@@ -32,6 +40,9 @@ def _parse_markdown_file(path: str) -> List[dict]:
     if buf:
         docs.append({'page_content': '\n'.join(buf).strip(),
                      'metadata': {'title': title, 'section': current, 'source': path}})
+    sections = [d['metadata']['section'] for d in docs]
+    dlog("loader", f"Parsed {len(docs)} sections from '{title}'",
+         {"sections": sections, "total_chars": sum(len(d['page_content']) for d in docs)})
     return docs
 
 
@@ -97,6 +108,8 @@ class PDFFilingLoader:
         if not os.path.exists(path):
             raise FileNotFoundError(f"PDF not found: {path}")
 
+        dlog("loader", f"PDFFilingLoader -> opening '{filing_id}'",
+             {"path": path})
         docs = []
         with pdfplumber.open(path) as pdf:
             for page_num, page in enumerate(pdf.pages, start=1):
@@ -125,17 +138,22 @@ class PDFFilingLoader:
                     parts.append('[TABLES]\n' + '\n\n'.join(table_blocks))
                 combined = '\n\n'.join(parts)
 
+                page_section = _detect_section(text)
+                dlog("loader", f"  Page {page_num}: section='{page_section}'",
+                     {"has_tables": bool(table_blocks), "chars": len(combined)})
                 docs.append({
                     'page_content': combined,
                     'metadata': {
                         'title':      filing_id,
-                        'section':    _detect_section(text),
+                        'section':    page_section,
                         'page':       page_num,
                         'source':     path,
                         'has_tables': bool(table_blocks),
                     }
                 })
 
+        dlog("loader", f"PDFFilingLoader -> done",
+             {"filing_id": filing_id, "pages_loaded": len(docs)})
         return docs
 
 
@@ -156,8 +174,12 @@ class LoaderFactory:
         root     = os.path.dirname(os.path.dirname(__file__))
         if resolved == 'pdf':
             pdf_dir = os.path.join(root, cfg.loader.pdf_dir)
+            dlog("loader", "LoaderFactory -> PDFFilingLoader",
+                 {"pdf_dir": pdf_dir})
             return PDFFilingLoader(pdf_dir)
         md_dir = os.path.join(root, cfg.loader.markdown_dir)
+        dlog("loader", "LoaderFactory -> MarkdownFilingLoader",
+             {"markdown_dir": md_dir})
         return MarkdownFilingLoader(md_dir)
 
 

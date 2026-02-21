@@ -26,6 +26,7 @@ import os
 from typing import Dict, List
 
 from .config import cfg
+from .debug import dlog
 from .loader import LoaderFactory
 from .chunker import chunk_documents
 from .schema import FilingState
@@ -97,12 +98,15 @@ def orchestrator_node(state: FilingState) -> dict:
     No LLM call — pure I/O and routing.
     """
     filing_id = state["filing_id"]
+    dlog("orchestrator", f"=== Node START ===", {"filing_id": filing_id})
     try:
         loader    = LoaderFactory.get()
         docs      = loader.load(filing_id)
+        dlog("orchestrator", f"Loaded {len(docs)} source documents")
         chunks    = chunk_documents(docs,
                                     chunk_size=cfg.chunker.chunk_size,
                                     chunk_overlap=cfg.chunker.chunk_overlap)
+        dlog("orchestrator", f"Chunked into {len(chunks)} chunks")
 
         # Build sections dict  {section_label: [chunk_docs]}
         sections: Dict[str, List[dict]] = {}
@@ -110,6 +114,10 @@ def orchestrator_node(state: FilingState) -> dict:
             sec = ch.get("metadata", {}).get("section", "Unknown")
             sections.setdefault(sec, []).append(ch)
 
+        dlog("orchestrator", f"Sections built",
+             {"sections": list(sections.keys()),
+              "chunks_per_section": {k: len(v) for k, v in sections.items()}})
+        dlog("orchestrator", f"=== Node END ===")
         return {
             "source_docs":  docs,
             "sections":     sections,
@@ -119,6 +127,7 @@ def orchestrator_node(state: FilingState) -> dict:
             "sources":      [],
         }
     except Exception as e:
+        dlog("orchestrator", f"ERROR: {e}")
         return {"errors": [f"orchestrator: {e}"], "source_docs": [], "sections": {}}
 
 
@@ -132,13 +141,17 @@ def sentiment_node(state: FilingState) -> dict:
     """
     sections = state.get("sections", {})
     text     = _section_text(sections, ["Business", "Results", "Unknown"])
+    dlog("sentiment_node", "=== Node START ===",
+         {"sections_available": list(sections.keys()), "text_chars": len(text)})
     if not text:
+        dlog("sentiment_node", "No text found — returning neutral")
         return {"tone": "neutral", "tone_reasoning": "No text found", "errors": []}
 
     llm = _get_llm()
 
     # ── LLM path ─────────────────────────────────────────────────────────────
     if llm:
+        dlog("sentiment_node", "Using LLM path")
         prompt_template = _read_prompt("sentiment_prompt.txt")
         prompt = (
             f"{prompt_template}\n\n"
@@ -151,6 +164,9 @@ def sentiment_node(state: FilingState) -> dict:
         tone   = result.get("tone", "neutral")
         if tone not in ("positive", "neutral", "cautious"):
             tone = "neutral"
+        dlog("sentiment_node", f"LLM result",
+             {"tone": tone, "reasoning": result.get("reasoning", "")[:120]})
+        dlog("sentiment_node", "=== Node END ===")
         return {
             "tone":           tone,
             "tone_reasoning": result.get("reasoning", ""),
@@ -158,12 +174,16 @@ def sentiment_node(state: FilingState) -> dict:
         }
 
     # ── Rule-based fallback ───────────────────────────────────────────────────
+    dlog("sentiment_node", "Using rule-based fallback (no LLM)")
     p = n = u = 0
     for docs in sections.values():
         for doc in docs:
             sp, sn, su = score_sentiment(doc.get("page_content", ""))
             p += sp; n += sn; u += su
     tone = label_from_scores(p, n, u)
+    dlog("sentiment_node", f"Rule-based result",
+         {"tone": tone, "pos": p, "neg": n, "unc": u})
+    dlog("sentiment_node", "=== Node END ===")
     return {
         "tone":           tone,
         "tone_reasoning": f"Rule-based (pos={p} neg={n} unc={u})",
@@ -185,13 +205,19 @@ def risk_node(state: FilingState) -> dict:
         sections.get("Risks", []) or
         sections.get("Unknown", [])
     )
+    dlog("risk_node", "=== Node START ===",
+         {"risk_doc_count": len(risk_docs),
+          "source_section": "Risk Factors" if sections.get("Risk Factors") else
+                            "Risks" if sections.get("Risks") else "Unknown"})
     if not risk_docs:
+        dlog("risk_node", "No risk-factor section found")
         return {"risks": [], "errors": ["risk_node: no risk-factor section found"]}
 
     llm = _get_llm()
 
     # ── LLM path ─────────────────────────────────────────────────────────────
     if llm:
+        dlog("risk_node", "Using LLM path")
         text            = _section_text(sections, ["Risk Factors", "Risks", "Unknown"])
         prompt_template = _read_prompt("risk_prompt.txt")
         prompt = (
@@ -202,13 +228,22 @@ def risk_node(state: FilingState) -> dict:
         )
         result = _llm_json(llm, prompt, fallback={"risks": []})
         risks  = result.get("risks", [])[:3]
+        dlog("risk_node", "LLM result",
+             {"risks_count": len(risks),
+              "severities": [r.get("severity") for r in risks]})
+        dlog("risk_node", "=== Node END ===")
         return {
             "risks":   risks,
             "sources": [{"section": "Risk Factors", "agent": "risk"}],
         }
 
     # ── Rule-based fallback ───────────────────────────────────────────────────
+    dlog("risk_node", "Using rule-based fallback (no LLM)")
     risks = extract_risk_factors_tool.invoke({"documents": risk_docs, "top_k": 3})
+    dlog("risk_node", "Rule-based result",
+         {"risks_count": len(risks),
+          "severities": [r.get("severity") for r in risks]})
+    dlog("risk_node", "=== Node END ===")
     return {
         "risks":   risks,
         "sources": [{"section": "Risk Factors", "agent": "risk_rule_based"}],
@@ -228,11 +263,14 @@ def financial_node(state: FilingState) -> dict:
     table_docs     = [d for d in all_docs if d.get("metadata", {}).get("chunk_type") == "table"
                       or "[TABLES]" in d.get("page_content", "")]
     target_docs    = table_docs or all_docs   # fall back to all if no tables found
+    dlog("financial_node", "=== Node START ===",
+         {"total_docs": len(all_docs), "table_docs": len(table_docs)})
 
     llm = _get_llm()
 
     # ── LLM path ─────────────────────────────────────────────────────────────
     if llm and table_docs:
+        dlog("financial_node", "Using LLM path")
         tables_text = "\n\n".join(d["page_content"] for d in table_docs)[:cfg.llm.max_table_chars]
         prompt = (
             "You are a financial data extractor. Read the Markdown tables below and "
@@ -246,13 +284,20 @@ def financial_node(state: FilingState) -> dict:
                            fallback={"revenue": None, "net_income": None,
                                      "gross_margin": None, "yoy_change": None})
         result["raw_tables"] = [d["page_content"][:500] for d in table_docs[:3]]
+        dlog("financial_node", "LLM result",
+             {k: v for k, v in result.items() if k != "raw_tables"})
+        dlog("financial_node", "=== Node END ===")
         return {
             "financials": result,
             "sources":    [{"section": "Financial Statements", "agent": "financial"}],
         }
 
     # ── Rule-based fallback ───────────────────────────────────────────────────
+    dlog("financial_node", "Using rule-based fallback (no LLM or no table docs)")
     financials = extract_financial_tables_tool.invoke({"documents": target_docs})
+    dlog("financial_node", "Rule-based result",
+         {k: v for k, v in financials.items() if k != "raw_tables"})
+    dlog("financial_node", "=== Node END ===")
     return {
         "financials": financials,
         "sources":    [{"section": "Financial Statements", "agent": "financial_rule_based"}],
@@ -273,14 +318,20 @@ def summarizer_node(state: FilingState) -> dict:
     risks      = state.get("risks", [])
     financials = state.get("financials", {})
     text       = _section_text(sections, ["Business", "Results"])
+    retry_count = state.get("retry_count", 0)
+    dlog("summarizer_node", "=== Node START ===",
+         {"retry_count": retry_count, "tone": tone,
+          "risks_count": len(risks), "text_chars": len(text)})
 
     if not text:
+        dlog("summarizer_node", "No Business/Results text found")
         return {"highlights": [], "errors": ["summarizer: no Business/Results text"]}
 
     llm = _get_llm()
 
     # ── LLM path ─────────────────────────────────────────────────────────────
     if llm:
+        dlog("summarizer_node", "Using LLM path")
         risk_summary  = "; ".join(r.get("snippet", "") for r in risks[:2])
         fin_summary   = (f"Revenue: {financials.get('revenue')}, "
                          f"Net income: {financials.get('net_income')}, "
@@ -297,12 +348,15 @@ def summarizer_node(state: FilingState) -> dict:
         )
         result     = _llm_json(llm, prompt, fallback={"highlights": []})
         highlights = result.get("highlights", [])[:2]
+        dlog("summarizer_node", "LLM result", {"highlights": highlights})
+        dlog("summarizer_node", "=== Node END ===")
         return {
             "highlights": highlights,
             "sources":    [{"section": "Business+Results", "agent": "summarizer"}],
         }
 
     # ── Rule-based fallback (legacy first-sentence extraction) ────────────────
+    dlog("summarizer_node", "Using rule-based fallback (no LLM)")
     highlights = []
     for sec_name in ("Business", "Results"):
         for doc in sections.get(sec_name, []):
@@ -311,6 +365,8 @@ def summarizer_node(state: FilingState) -> dict:
             sentence = doc["page_content"].split(".")[0].strip()
             if sentence:
                 highlights.append(f"{sentence}. ({sec_name})")
+    dlog("summarizer_node", "Rule-based result", {"highlights": highlights[:2]})
+    dlog("summarizer_node", "=== Node END ===")
     return {
         "highlights": highlights[:2],
         "sources":    [{"section": "Business+Results", "agent": "summarizer_rule_based"}],
@@ -329,6 +385,9 @@ def evaluator_node(state: FilingState) -> dict:
     tone       = state.get("tone", "")
     financials = state.get("financials", {})
     source_docs = state.get("source_docs", [])
+    dlog("evaluator_node", "=== Node START ===",
+         {"highlights": len(highlights), "risks": len(risks),
+          "tone": tone, "source_docs": len(source_docs)})
 
     # ── Schema validation ─────────────────────────────────────────────────────
     summary_dict = {
@@ -338,6 +397,8 @@ def evaluator_node(state: FilingState) -> dict:
         "financials": financials,
     }
     validation = validate_output_tool.invoke({"filing_summary": summary_dict})
+    dlog("evaluator_node", "Schema validation",
+         {"valid": validation["valid"], "errors": validation["errors"]})
 
     # ── Groundedness check ────────────────────────────────────────────────────
     source_text   = " ".join(d.get("page_content", "") for d in source_docs)
@@ -346,19 +407,25 @@ def evaluator_node(state: FilingState) -> dict:
         "summary_text": summary_text,
         "source_text":  source_text,
     })
+    dlog("evaluator_node", "Groundedness check",
+         {"score": groundedness["score"], "grounded": groundedness["grounded"],
+          "threshold": cfg.evaluation.groundedness_threshold})
 
     threshold = cfg.evaluation.groundedness_threshold
     passed    = validation["valid"] and groundedness["score"] >= threshold
     errors    = validation["errors"]
     if groundedness["score"] < threshold:
-        errors.append(f"groundedness too low: {groundedness['score']:.2f} (min {threshold})") 
+        errors.append(f"groundedness too low: {groundedness['score']:.2f} (min {threshold})")
 
+    retry = state.get("retry_count", 0) + (0 if passed else 1)
+    dlog("evaluator_node", "=== Node END ===",
+         {"passed": passed, "retry_count": retry})
     return {
         "eval_result":  {
             "valid":        passed,
             "validation":   validation,
             "groundedness": groundedness,
         },
-        "retry_count":  state.get("retry_count", 0) + (0 if passed else 1),
+        "retry_count":  retry,
         "errors":       errors,
     }

@@ -1,6 +1,8 @@
 from typing import List
 import re
 
+from .debug import dlog
+
 try:
     from langchain_text_splitters import RecursiveCharacterTextSplitter
     _LANGCHAIN_AVAILABLE = True
@@ -45,9 +47,19 @@ def chunk_documents(
         chunk_size:    Target max characters per chunk (default 1000).
         chunk_overlap: Overlap between adjacent text chunks (default 150).
     """
+    dlog("chunker", f"chunk_documents called",
+         {"input_docs": len(docs), "chunk_size": chunk_size,
+          "chunk_overlap": chunk_overlap,
+          "backend": "langchain" if _LANGCHAIN_AVAILABLE else "fallback"})
     if _LANGCHAIN_AVAILABLE:
-        return _langchain_chunk(docs, chunk_size, chunk_overlap)
-    return _fallback_chunk(docs, chunk_size)
+        result = _langchain_chunk(docs, chunk_size, chunk_overlap)
+    else:
+        result = _fallback_chunk(docs, chunk_size)
+    dlog("chunker", f"chunk_documents done",
+         {"output_chunks": len(result),
+          "table_chunks": sum(1 for c in result if c.get('metadata', {}).get('chunk_type') == 'table'),
+          "text_chunks":  sum(1 for c in result if c.get('metadata', {}).get('chunk_type') == 'text')})
+    return result
 
 
 def _langchain_chunk(docs: List[dict], chunk_size: int, chunk_overlap: int) -> List[dict]:
@@ -62,6 +74,7 @@ def _langchain_chunk(docs: List[dict], chunk_size: int, chunk_overlap: int) -> L
     for d in docs:
         text = d['page_content']
         meta = d.get('metadata', {})
+        section = meta.get('section', 'Unknown')
 
         # --- Separate table blocks: keep them intact, never split mid-table ---
         table_match = re.search(r'\[TABLES\]\n', text, re.DOTALL)
@@ -73,6 +86,7 @@ def _langchain_chunk(docs: List[dict], chunk_size: int, chunk_overlap: int) -> L
             table_block = None
 
         # --- Chunk prose with overlap ---
+        prose_count = 0
         if prose.strip():
             splits = splitter.split_text(prose)
             for i, chunk_text in enumerate(splits):
@@ -81,19 +95,26 @@ def _langchain_chunk(docs: List[dict], chunk_size: int, chunk_overlap: int) -> L
                         'page_content': chunk_text,
                         'metadata': {**meta, 'chunk_index': i, 'chunk_type': 'text'},
                     })
+                    prose_count += 1
 
         # --- Table block: one chunk per page, never split ---
+        table_count = 0
         if table_block:
             out.append({
                 'page_content': table_block,
                 'metadata': {**meta, 'chunk_index': 0, 'chunk_type': 'table'},
             })
+            table_count = 1
+
+        dlog("chunker", f"  Section '{section}': {prose_count} prose + {table_count} table chunks")
 
     return out
 
 
 def _fallback_chunk(docs: List[dict], max_chars: int) -> List[dict]:
     """Original fixed-size fallback when LangChain is unavailable."""
+    dlog("chunker", f"_fallback_chunk called",
+         {"input_docs": len(docs), "max_chars": max_chars})
     out = []
     for d in docs:
         t = d['page_content']; m = d.get('metadata', {})
@@ -105,4 +126,5 @@ def _fallback_chunk(docs: List[dict], max_chars: int) -> List[dict]:
                     'page_content': t[i:i + max_chars],
                     'metadata': {**m, 'chunk_index': i // max_chars},
                 })
+    dlog("chunker", f"_fallback_chunk done", {"output_chunks": len(out)})
     return out

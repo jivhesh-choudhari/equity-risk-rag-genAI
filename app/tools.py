@@ -12,6 +12,7 @@ from typing import Dict, List
 from langchain_core.tools import tool
 
 from .chunker import chunk_documents
+from .debug import dlog
 from .loader import LoaderFactory
 from .sentiment_risk import (
     extract_risk_snippets,
@@ -34,8 +35,10 @@ def load_filing_tool(filing_id: str, source: str = "markdown") -> dict:
     Returns:
         {'documents': List[dict], 'section_count': int}
     """
+    dlog("tool:load_filing", f"Invoking", {"filing_id": filing_id, "source": source})
     loader = LoaderFactory.get(source)
     docs = loader.load(filing_id)
+    dlog("tool:load_filing", f"Done", {"section_count": len(docs)})
     return {"documents": docs, "section_count": len(docs)}
 
 
@@ -53,9 +56,13 @@ def extract_sections_tool(documents: list, section_names: list) -> dict:
     Returns:
         {'documents': List[dict], 'count': int, 'sections_found': List[str]}
     """
+    dlog("tool:extract_sections", f"Invoking",
+         {"input_docs": len(documents), "requested": section_names})
     name_set  = set(section_names)
     filtered  = [d for d in documents if d.get("metadata", {}).get("section") in name_set]
     found     = list({d["metadata"]["section"] for d in filtered})
+    dlog("tool:extract_sections", f"Done",
+         {"filtered_count": len(filtered), "sections_found": found})
     return {"documents": filtered, "count": len(filtered), "sections_found": found}
 
 
@@ -70,13 +77,17 @@ def score_sentiment_tool(text: str) -> dict:
     Returns:
         {'positive': int, 'negative': int, 'uncertain': int, 'tone': str}
     """
+    dlog("tool:score_sentiment", f"Invoking", {"text_chars": len(text)})
     pos, neg, unc = score_sentiment(text)
-    return {
+    result = {
         "positive":  pos,
         "negative":  neg,
         "uncertain": unc,
         "tone":      label_from_scores(pos, neg, unc),
     }
+    dlog("tool:score_sentiment", f"Done",
+         {"tone": result["tone"], "pos": pos, "neg": neg, "unc": unc})
+    return result
 
 
 # ── Tool 4: Extract Risk Factors ──────────────────────────────────────────────
@@ -94,6 +105,8 @@ def extract_risk_factors_tool(documents: list, top_k: int = 3) -> list:
     Returns:
         List of {'snippet': str, 'severity': str, 'section': str}
     """
+    dlog("tool:extract_risks", f"Invoking",
+         {"input_docs": len(documents), "top_k": top_k})
     # chunk_documents handles sections that are already small gracefully
     chunks  = chunk_documents(documents, chunk_size=1000, chunk_overlap=0)
     top     = extract_risk_snippets(chunks, k=top_k)
@@ -108,6 +121,8 @@ def extract_risk_factors_tool(documents: list, top_k: int = 3) -> list:
         severity = "high" if score >= 4 else "medium" if score >= 2 else "low"
         if sentence:
             results.append({"snippet": f"{sentence}.", "severity": severity, "section": section})
+    dlog("tool:extract_risks", f"Done",
+         {"results": [{"severity": r["severity"], "section": r["section"]} for r in results]})
     return results
 
 
@@ -133,6 +148,8 @@ def extract_financial_tables_tool(documents: list) -> dict:
     """
     table_docs = [d for d in documents if d.get("metadata", {}).get("chunk_type") == "table"
                   or "[TABLES]" in d.get("page_content", "")]
+    dlog("tool:extract_financials", f"Invoking",
+         {"input_docs": len(documents), "table_docs": len(table_docs)})
 
     raw_tables:  List[str] = []
     revenue:     str | None = None
@@ -167,16 +184,21 @@ def extract_financial_tables_tool(documents: list) -> dict:
         if gm_match   and not gross_margin: gross_margin = gm_match.group(1).strip()
         if yoy_match  and not yoy_change:   yoy_change   = yoy_match.group(1).strip()
 
-    return {
+    metrics = {
         "revenue":      revenue,
         "net_income":   net_income,
         "gross_margin": gross_margin,
         "yoy_change":   yoy_change,
         "raw_tables":   raw_tables,
     }
+    dlog("tool:extract_financials", "Done",
+         {"revenue": revenue, "net_income": net_income,
+          "gross_margin": gross_margin, "yoy_change": yoy_change,
+          "table_blocks_found": len(raw_tables)})
+    return metrics
 
 
-# ── Tool 6: Validate Output ───────────────────────────────────────────────────
+# ── Tool 6: Validate Output ──────────────────────────────────────────────────────
 
 @tool
 def validate_output_tool(filing_summary: dict) -> dict:
@@ -192,6 +214,10 @@ def validate_output_tool(filing_summary: dict) -> dict:
     Returns:
         {'valid': bool, 'errors': List[str]}
     """
+    dlog("tool:validate", f"Invoking",
+         {"highlights": len(filing_summary.get("highlights", [])),
+          "risks": len(filing_summary.get("risks", [])),
+          "tone": filing_summary.get("tone", "")})
     errors: List[str] = []
 
     highlights = filing_summary.get("highlights", [])
@@ -213,7 +239,9 @@ def validate_output_tool(filing_summary: dict) -> dict:
     if "financials" not in filing_summary:
         errors.append("financials key missing from summary")
 
-    return {"valid": len(errors) == 0, "errors": errors}
+    result = {"valid": len(errors) == 0, "errors": errors}
+    dlog("tool:validate", f"Done", {"valid": result["valid"], "errors": errors})
+    return result
 
 
 # ── Tool 7: Groundedness Check ────────────────────────────────────────────────
@@ -227,16 +255,22 @@ def groundedness_check_tool(summary_text: str, source_text: str) -> dict:
     Returns:
         {'score': float, 'grounded': bool, 'total_tokens': int, 'hit_tokens': int}
     """
+    dlog("tool:groundedness", f"Invoking",
+         {"summary_chars": len(summary_text), "source_chars": len(source_text)})
     tokens      = re.findall(r'\w+', summary_text.lower())
     source_lower = source_text.lower()
     hits        = sum(1 for t in tokens if t in source_lower)
     score       = hits / len(tokens) if tokens else 0.0
-    return {
+    result = {
         "score":        round(score, 3),
         "grounded":     score >= 0.70,
         "hit_tokens":   hits,
         "total_tokens": len(tokens),
     }
+    dlog("tool:groundedness", f"Done",
+         {"score": result["score"], "grounded": result["grounded"],
+          "hits": hits, "total": len(tokens)})
+    return result
 
 
 # ── Tool registry (for agent binding) ────────────────────────────────────────
