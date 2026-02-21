@@ -33,6 +33,7 @@ from .agents import (
     sentiment_node,
     summarizer_node,
 )
+from .config import cfg
 from .schema import FilingState
 
 
@@ -46,7 +47,7 @@ def _route_evaluator(state: FilingState) -> str:
     """
     result      = state.get("eval_result", {})
     retry_count = state.get("retry_count", 0)
-    if result.get("valid", False) or retry_count >= 2:
+    if result.get("valid", False) or retry_count >= cfg.graph.max_retries:
         return "end"
     return "retry"
 

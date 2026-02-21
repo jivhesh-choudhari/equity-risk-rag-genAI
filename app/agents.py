@@ -22,10 +22,10 @@ Node execution order (see graph.py):
 """
 from __future__ import annotations
 
-import json
 import os
 from typing import Dict, List
 
+from .config import cfg
 from .loader import LoaderFactory
 from .chunker import chunk_documents
 from .schema import FilingState
@@ -42,15 +42,14 @@ from .tools import (
 
 def _get_llm():
     """Return ChatOpenAI instance or None if unavailable."""
-    api_key = os.getenv("OPENAI_API_KEY", "")
-    mock    = os.getenv("MOCK_LLM", "false").lower() == "true"
-    if mock or not api_key:
+    if cfg.llm.mock or not cfg.secrets.has_openai_key:
         return None
     try:
         from langchain_openai import ChatOpenAI
         return ChatOpenAI(
-            model       = os.getenv("LLM_MODEL", "gpt-4o-mini"),
-            temperature = float(os.getenv("LLM_TEMPERATURE", "0")),
+            model       = cfg.llm.model,
+            temperature = cfg.llm.temperature,
+            api_key     = cfg.secrets.openai_api_key,
         )
     except ImportError:
         return None
@@ -70,13 +69,15 @@ def _llm_json(llm, prompt_text: str, fallback: dict) -> dict:
         return {**fallback, "_llm_error": str(e)}
 
 
-def _section_text(sections: Dict[str, List[dict]], names: list, max_chars: int = 14000) -> str:
+def _section_text(sections: Dict[str, List[dict]], names: list,
+                  max_chars: int | None = None) -> str:
     """Concatenate page_content from requested sections, capped at max_chars."""
+    limit = max_chars if max_chars is not None else cfg.llm.max_section_chars
     parts = []
     for name in names:
         for doc in sections.get(name, []):
             parts.append(doc.get("page_content", ""))
-    return "\n\n".join(parts)[:max_chars]
+    return "\n\n".join(parts)[:limit]
 
 
 def _read_prompt(filename: str) -> str:
@@ -99,7 +100,9 @@ def orchestrator_node(state: FilingState) -> dict:
     try:
         loader    = LoaderFactory.get()
         docs      = loader.load(filing_id)
-        chunks    = chunk_documents(docs, chunk_size=1000, chunk_overlap=150)
+        chunks    = chunk_documents(docs,
+                                    chunk_size=cfg.chunker.chunk_size,
+                                    chunk_overlap=cfg.chunker.chunk_overlap)
 
         # Build sections dict  {section_label: [chunk_docs]}
         sections: Dict[str, List[dict]] = {}
@@ -230,7 +233,7 @@ def financial_node(state: FilingState) -> dict:
 
     # ── LLM path ─────────────────────────────────────────────────────────────
     if llm and table_docs:
-        tables_text = "\n\n".join(d["page_content"] for d in table_docs)[:10000]
+        tables_text = "\n\n".join(d["page_content"] for d in table_docs)[:cfg.llm.max_table_chars]
         prompt = (
             "You are a financial data extractor. Read the Markdown tables below and "
             "extract key metrics. Return JSON with keys: revenue, net_income, "
@@ -344,10 +347,11 @@ def evaluator_node(state: FilingState) -> dict:
         "source_text":  source_text,
     })
 
-    passed = validation["valid"] and groundedness["grounded"]
-    errors = validation["errors"]
-    if not groundedness["grounded"]:
-        errors.append(f"groundedness too low: {groundedness['score']:.2f} (min 0.70)")
+    threshold = cfg.evaluation.groundedness_threshold
+    passed    = validation["valid"] and groundedness["score"] >= threshold
+    errors    = validation["errors"]
+    if groundedness["score"] < threshold:
+        errors.append(f"groundedness too low: {groundedness['score']:.2f} (min {threshold})") 
 
     return {
         "eval_result":  {

@@ -151,14 +151,14 @@ class LoaderFactory:
 
     @staticmethod
     def get(source: str = None):
-        source = source or os.getenv('FILING_SOURCE', 'markdown')
-        if source == 'pdf':
-            pdf_dir = os.getenv('PDF_DIR', os.path.join('corpus', 'pdfs'))
+        from .config import cfg   # local import avoids circular at module load
+        resolved = source or cfg.loader.source
+        root     = os.path.dirname(os.path.dirname(__file__))
+        if resolved == 'pdf':
+            pdf_dir = os.path.join(root, cfg.loader.pdf_dir)
             return PDFFilingLoader(pdf_dir)
-        corpus_dir = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)), 'corpus', 'filings'
-        )
-        return MarkdownFilingLoader(corpus_dir)
+        md_dir = os.path.join(root, cfg.loader.markdown_dir)
+        return MarkdownFilingLoader(md_dir)
 
 
 # ── Backward-compat shim (used by summarize.py) ────────────────────────────────

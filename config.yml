@@ -1,0 +1,70 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# Equity Filings Summarizer — Project Configuration
+# ═══════════════════════════════════════════════════════════════════════════════
+# Secrets (OPENAI_API_KEY) live in .env — never put them here.
+# This file controls all runtime behaviour: loader, chunker, LLM, graph, server.
+
+# ── Loader ────────────────────────────────────────────────────────────────────
+loader:
+  # "markdown" → MarkdownFilingLoader (synthetic corpus, no key required)
+  # "pdf"      → PDFFilingLoader      (real 10-K / 10-Q via pdfplumber)
+  source: markdown
+
+  # Directory containing .md filings (used when source = markdown)
+  markdown_dir: corpus/filings
+
+  # Directory containing .pdf filings (used when source = pdf)
+  pdf_dir: corpus/pdfs
+
+  # pdfplumber table extraction settings (only relevant when source = pdf)
+  pdf_table_settings:
+    vertical_strategy: lines
+    horizontal_strategy: lines
+    snap_tolerance: 3
+
+# ── Chunker ───────────────────────────────────────────────────────────────────
+chunker:
+  chunk_size: 1000        # max characters per text chunk
+  chunk_overlap: 150      # overlap between adjacent text chunks
+
+# ── LLM ───────────────────────────────────────────────────────────────────────
+llm:
+  # Set to true to bypass all LLM calls and use rule-based fallbacks throughout.
+  # Useful for local testing, CI, or when no API key is available.
+  mock: false
+
+  # OpenAI model to use for all agent nodes
+  model: gpt-4o-mini
+
+  # Sampling temperature (0 = deterministic)
+  temperature: 0
+
+  # Max characters of section text fed to each agent's LLM prompt.
+  # ~14 000 chars ≈ ~3 500 tokens — well within gpt-4o-mini's 128k context.
+  max_section_chars: 14000
+
+  # Max characters of table content sent to the Financial Agent
+  max_table_chars: 10000
+
+# ── Graph (LangGraph pipeline) ────────────────────────────────────────────────
+graph:
+  # Maximum number of times the Evaluator will retry the Summarizer on failure
+  max_retries: 2
+
+# ── Evaluation ────────────────────────────────────────────────────────────────
+evaluation:
+  # Minimum groundedness score (0.0–1.0) required to pass the Evaluator node
+  groundedness_threshold: 0.70
+
+  # Path to human-labelled gold tones (relative to project root)
+  gold_labels_path: evaluation/gold_labels.json
+
+# ── Server ────────────────────────────────────────────────────────────────────
+server:
+  host: 0.0.0.0
+  port: 9060
+  reload: true
+
+# ── MCP Server ────────────────────────────────────────────────────────────────
+mcp:
+  transport: stdio

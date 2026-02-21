@@ -3,6 +3,10 @@ uvicorn
 pydantic
 requests
 
+# Configuration
+pyyaml                     # config.yml parsing
+python-dotenv              # .env loading for OPENAI_API_KEY
+
 # Phase 1 – PDF loading
 pdfplumber                 # table-aware PDF extraction for 10-K/10-Q
 
