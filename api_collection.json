@@ -1,0 +1,46 @@
+{
+	"info": {
+		"_postman_id": "2b35d1b5-4e7c-4422-9f81-eee17372142c",
+		"name": "Equity Filing Assessment",
+		"schema": "https://schema.getpostman.com/json/collection/v2.0.0/collection.json",
+		"_exporter_id": "25551487"
+	},
+	"item": [
+		{
+			"name": "Rule Based",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"filing_id\":\"ACMR-2022\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": "http://localhost:9060/summarize"
+			},
+			"response": []
+		},
+		{
+			"name": "LLM (markdown)",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"filing_id\":\"ACMR-2022\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": "http://localhost:9060/analyze"
+			},
+			"response": []
+		}
+	]
+}

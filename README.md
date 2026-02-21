@@ -191,6 +191,8 @@ The server starts at `http://localhost:9060`. Swagger UI is at `http://localhost
 
 ## Using the API
 
+> NOTE: Use api_collection.json to Load APIs Directly to Postman for testing. 
+
 ### Rule-based endpoint — `POST /summarize`
 
 Always available, no API key required.
