@@ -2,3 +2,17 @@ fastapi
 uvicorn
 pydantic
 requests
+
+# Phase 1 – PDF loading
+pdfplumber                 # table-aware PDF extraction for 10-K/10-Q
+
+# Phase 2 – Intelligent chunking
+langchain-text-splitters   # RecursiveCharacterTextSplitter
+
+# Phase 3 & 4 – Agentic pipeline
+langgraph                  # StateGraph, parallel fan-out/fan-in
+langchain-core             # @tool, ChatPromptTemplate, JsonOutputParser
+langchain-openai           # ChatOpenAI (GPT-4o-mini default)
+
+# MCP Server
+mcp[cli]                   # FastMCP + stdio transport
